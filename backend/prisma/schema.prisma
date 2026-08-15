@@ -1,13 +1,266 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// =========================================================================
+// 🎭 SYSTEM ENUMERATIONS (STRICT CAP-DATA VALIDATORS)
+// =========================================================================
+
+enum Role {
+  SUPERADMIN // Cherif: Full access to platform metrics & cross-tenant health
+  OWNER // Your Friend: Owns standalone multi-apartment environment
+  STAFF // Team Members: Restricted operational visibility limits
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  FULLY_PAID
+}
+
+enum ExpenseCategory {
+  CLEANING
+  MAINTENANCE
+  UTILITIES
+  TAXES
+  OTHER
+}
+
+enum UnitStatus {
+  AVAILABLE
+  OCCUPIED
+  DIRTY_CHECKOUT
+  MAINTENANCE_HOLD
+}
+
+enum TicketUrgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum NotificationType {
+  GUEST_ARRIVAL
+  PAYMENT_DEADLINE
+  MAINTENANCE_ALERT
+  SYSTEM_NOTICE
+}
+
+// =========================================================================
+// 👥 USER INTERFACE HIERARCHIES (MULTI-TENANT AUTH SEPARATION)
+// =========================================================================
+
+model User {
+  id       String @id @default(uuid())
+  email    String @unique
+  password String // Hashed via bcrypt
+  name     String
+  role     Role   @default(OWNER)
+
+  // Role-Based Access Controls (RBAC): Links Staff members directly to their Boss
+  parentId String?
+  parent   User?   @relation("UserToTeam", fields: [parentId], references: [id], onDelete: Cascade)
+  team     User[]  @relation("UserToTeam")
+
+  // Structural Relations
+  properties       Property[]
+  bookings         Booking[]
+  expenses         Expense[]
+  customSources    CustomBookingSource[]
+  messageTemplates MessageTemplate[]
+  guests           Guest[]
+  tickets          MaintenanceTicket[]
+  notifications    InAppNotification[]
+  auditLogs        AuditLog[]
+
+  createdAt DateTime @default(now())
+}
+
+// =========================================================================
+// 🏡 REAL ESTATE ASSET TREE LAYOUT (PARENT-CHILD PROPERTY CORE)
+// =========================================================================
+
+model Property {
+  id      String  @id @default(uuid())
+  name    String // e.g., "Residence Les Palmes", "Villa Jasmine"
+  type    String // e.g., "BUILDING", "STANDALONE_VILLA", "HOUSE"
+  address String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  units    Unit[]
+  expenses Expense[]
+  tickets  MaintenanceTicket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Unit {
+  id        String     @id @default(uuid())
+  name      String // e.g., "Apartment 4B", "Suite 101"
+  status    UnitStatus @default(AVAILABLE) // Houses housekeeping operational states
+  basePrice Decimal    @db.Decimal(10, 2) // Autocompletes base checkout math options
+
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  bookings Booking[]
+  tickets  MaintenanceTicket[]
+
+  createdAt DateTime @default(now())
+}
+
+// =========================================================================
+// 👤 CRM UTILITIES (GUEST COMPILATIONS & WHATSAPP AUTOMATION)
+// =========================================================================
+
+model Guest {
+  id         String  @id @default(uuid())
+  name       String // Enables quick-index text autocomplete queries
+  phone      String
+  passportId String?
+  notes      String? // Tracks local requirements: "Requests Extra Bed", "Wants AC Activated"
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bookings  Booking[]
+  createdAt DateTime  @default(now())
+
+  @@unique([phone, userId]) // Blocks repeating identical client cells within one account
+}
+
+model MessageTemplate {
+  id    String @id @default(uuid())
+  title String // e.g., "Booking Confirmation" or "Rent Balance Reminder"
+  body  String // Contains parsing text tokens: "Hello {guest}, balance due is {reste}."
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model CustomBookingSource {
+  id   String @id @default(uuid())
+  name String // e.g., "Direct Instagram", "Local Travel Office"
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bookings  Booking[]
+  createdAt DateTime  @default(now())
+}
+
+// =========================================================================
+// 💰 THE TOTAL LEDGER AND METRIC CALCULATIONS
+// =========================================================================
+
+model Booking {
+  id              String    @id @default(uuid())
+  checkIn         DateTime
+  checkOut        DateTime
+  paymentDeadline DateTime? // Tracking loop anchor for balance promise targets
+
+  // Advanced Demographics
+  countAdults   Int @default(1)
+  countChildren Int @default(0)
+  countInfants  Int @default(0)
+
+  // Custom Checkbox Preference States
+  requestBabyBed   Boolean @default(false)
+  requestAC        Boolean @default(false)
+  requestHighChair Boolean @default(false)
+
+  // High-Precision Accounting Cells (L'avance & Le reste)
+  totalPrice  Decimal       @db.Decimal(10, 2)
+  advancePaid Decimal       @default(0.00) @db.Decimal(10, 2)
+  balanceDue  Decimal       @db.Decimal(10, 2)
+  status      PaymentStatus @default(UNPAID)
+
+  // Relations
+  customSourceId String?
+  customSource   CustomBookingSource? @relation(fields: [customSourceId], references: [id], onDelete: SetNull)
+  guestId        String
+  guest          Guest                @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  unitId         String
+  unit           Unit                 @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =========================================================================
+// 🚨 OPERATIONS & SECURITY (MAINTENANCE, ALERTS & IMPRINTS)
+// =========================================================================
+
+model MaintenanceTicket {
+  id          String        @id @default(uuid())
+  title       String // e.g., "AC Blowing Warm Air", "Leaky Kitchen Pipe"
+  description String?
+  urgency     TicketUrgency @default(LOW)
+  status      TicketStatus  @default(OPEN)
+
+  unitId     String
+  unit       Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InAppNotification {
+  id      String           @id @default(uuid())
+  title   String // e.g., "Rent Due Reminder"
+  message String // e.g., "Karim owes 400 TND for checking out tomorrow"
+  type    NotificationType @default(SYSTEM_NOTICE)
+  isRead  Boolean          @default(false)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model Expense {
+  id       String          @id @default(uuid())
+  title    String // e.g., "Plumber service fee", "New sheets inventory"
+  amount   Decimal         @db.Decimal(10, 2)
+  category ExpenseCategory @default(OTHER)
+  date     DateTime        @default(now())
+
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id      String @id @default(uuid())
+  action  String // e.g., "DELETE_RESERVATION", "OVERRIDE_OUTSTANDING_BALANCE"
+  details String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
