@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # The PostgreSQL Database Engine Container
   postgres_db:
     image: postgres:16-alpine
     container_name: stayhost_postgres
@@ -8,9 +7,9 @@ services:
     environment:
       POSTGRES_USER: stayhost_admin
       POSTGRES_PASSWORD: super_secret_password_123
-      POSTGRES_DB: stayhost_db
+      POSTGRES_DB: stayhost_vault
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
