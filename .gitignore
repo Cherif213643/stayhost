@@ -27,3 +27,7 @@ frontend/.env
 .vscode/
 .DS_Store
 *.tsbuildinfo
+
+# Block Prisma Auto-Generated Clients
+backend/generated/
+
