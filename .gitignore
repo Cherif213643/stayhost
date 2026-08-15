@@ -1,0 +1,29 @@
+# Block dependencies for both backend and frontend folders
+backend/node_modules/
+frontend/node_modules/
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+
+# Block framework cache and build outputs
+frontend/.next/
+frontend/out/
+backend/dist/
+build/
+/coverage
+
+# Block environment configuration files & keys
+.env
+.env*
+backend/.env
+frontend/.env
+*.pem
+
+# Block operating system and editor cache files
+.agents/
+.claude/
+.windsurf/
+.vscode/
+.DS_Store
+*.tsbuildinfo
